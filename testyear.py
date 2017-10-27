@@ -35,6 +35,8 @@ def reinquire(q_args, offset):
     return new_args, results
 
 def process_results(results, attributes):
+    if attributes == '*':
+        return results
     processed = []
     for r in results:
         p = {a: r[a] for a in attributes}
@@ -52,8 +54,11 @@ def main(args):
                     },
                 'parent': None
             }
+    logger.debug('making first query with args: {}'.format(q_args))
     q = inquirer.AcademicQuerier(q_args['query_type'], q_args['payload'])
     results = q.post()
+    logger.debug('query done')
+    logger.debug([r.as_dict() for r in results])
     processed = process_results(results, args.attributes.split(','))
     all_results.extend(processed)
     num_results += len(results)
@@ -71,7 +76,10 @@ def main(args):
         if i in [20, 50] or i % 100 == 0:
             logger.debug("{} queries completed. num_results: {}".format(i+1, num_results))
 
-    outfname = 'testyear-{}.json'.format(args.year)
+    if not args.out:
+        outfname = 'testyear-{}.json'.format(args.year)
+    else:
+        outfname = args.out
     outfpath = os.path.abspath(outfname)
     logger.debug('writing {} records to {}'.format(len(all_results), outfpath))
     with open(outfpath, 'w') as outf:
@@ -87,6 +95,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="get all papers in a year")
     parser.add_argument("year", type=int, default=1999, help="year to query")
+    parser.add_argument("-o", "--out", help="output filename (json)")
     parser.add_argument("--attributes", default='Id,Y,D', help="comma separated list of attributes to return")  # return these attributes: paper ID, Year, Date
     parser.add_argument("--debug", action='store_true', help="output debugging info")
     global args
