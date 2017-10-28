@@ -39,7 +39,9 @@ def process_entities(entities):
     for e in entities:
         # JSON encode extended metadata
         e['E'] = json.loads(e['E'])
+
         p = {
+            'Id': e['Id'],
             'Ti': e['Ti'],
             'L': e.get('L'),
             'Y': e['Y'],
