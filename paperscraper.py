@@ -131,18 +131,25 @@ def make_repeated_queries(year, offset_start=0, offset_thresh=0):
         querier.query.count = 1000
         logger.debug('making query {} with args: {}'.format(i+1, querier.query.get_body()))
         attempts = 0
-        while attempts < 15:
+        # NOTE: when the offset gets too high (somewhere between 2e6 and 3e6) we will start getting a lot of timeout errors (these are returned as 200 but the entities are empty and it has an 'aborted' attribute
+        # it looks like we'll have to give up on this method when this starts happening.
+        max_attempts = 5
+        while attempts < max_attempts:
             try:
                 j = generic_evaluate_query_from_querier(querier)
+                if attempts > 0:
+                    logger.info('query succeeded after {} attempts'.format(attempts+1))
                 break
             except classes.Error as e:
                 attempts += 1
-                delay = 60 * (attempts + 1)
+                if attempts >= max_attempts:
+                    logger.error('max attempts exceeded with query_offset=={}. giving up: writing what we have to json and exiting...'.format(querier.query.offset))
+                    return all_results, querier.query.offset
+                delay = min(60 * (attempts + 1), 200)
                 querier.query.count = 50
-                logger.warn("bad request: {}. sleeping {} seconds and trying again with query count {}".format(e, delay, querier.query.count))
+                logger.warn("bad request: {}. sleeping {} seconds and trying again with query count {} (attempt {})".format(e, delay, querier.query.count, attempts))
                 time.sleep(delay)
-                if attempts >= 5:
-                    raise
+                continue
         entities = j['entities']
         if not entities:
             break

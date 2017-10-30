@@ -1,5 +1,5 @@
-for (( i = 1994; i < 2018; i++ )); do
-	if [[ $(($i % 2)) == 0 ]]; then
+for (( i = 2000; i < 2010; i++ )); do
+	if [[ $(($i % 10)) == 0 ]]; then
 		echo "$(date): waiting for jobs to finish before continuing"
 		wait
 	fi
