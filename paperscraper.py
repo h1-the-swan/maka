@@ -106,21 +106,11 @@ def check_type(entities):
         if entity.get('Ty') not in ['0', 0]:
             logger.warn("entity Id={} is not paper (Ty 0)".format(entity.get('Id')))
 
-def main(args):
-    outdir = os.path.abspath(args.outdir)
-    if not args.out:
-        outfname = 'papers-{}.json'.format(args.year)
-    else:
-        outfname = args.out
-    outfpath = os.path.join(outdir, outfname)
-    if os.path.exists(outfpath):
-        logger.error("file {} exists. exiting.".format(outfpath))
-        sys.exit(1)
-
-
+def make_repeated_queries(year, offset_start=0, offset_thresh=0):
     all_results = []
     # num_results = 0
-    querier = get_querier("Y={}".format(args.year))
+    querier = get_querier("Y={}".format(year))
+    querier.query.offset = offset_start
     logger.debug('making first query with args: {}'.format(querier.query.get_body()))
     j = generic_evaluate_query_from_querier(querier)
     logger.debug('query done')
@@ -132,12 +122,27 @@ def main(args):
     # all_results.extend(processed)
     # num_results += len(results)
 
+    if len(all_results) == 0:
+        return all_results
+
     i = 0
-    querier.query.count = 1000
+    querier.query.offset = querier.query.offset + querier.query.count
     while True:
-        querier.query.offset = len(all_results)
+        querier.query.count = 1000
         logger.debug('making query {} with args: {}'.format(i+1, querier.query.get_body()))
-        j = generic_evaluate_query_from_querier(querier)
+        attempts = 0
+        while attempts < 15:
+            try:
+                j = generic_evaluate_query_from_querier(querier)
+                break
+            except classes.Error as e:
+                attempts += 1
+                delay = 60 * (attempts + 1)
+                querier.query.count = 50
+                logger.warn("bad request: {}. sleeping {} seconds and trying again with query count {}".format(e, delay, querier.query.count))
+                time.sleep(delay)
+                if attempts >= 5:
+                    raise
         entities = j['entities']
         if not entities:
             break
@@ -145,16 +150,56 @@ def main(args):
         processed = process_entities(entities)
         all_results.extend(processed)
         # processed = process_results(results, args.attributes.split(','))
-        time.sleep(.01)
+        time.sleep(1)
         i += 1
         if i in [20, 50] or i % 100 == 0:
             logger.debug("{} queries completed. num_results: {}".format(i+1, len(all_results)))
+        querier.query.offset = querier.query.offset + querier.query.count
+        if (offset_thresh != 0) and (querier.query.offset >= offset_thresh):
+            break
+    return all_results, querier.query.offset
 
+def main(args):
+    outdir = os.path.abspath(args.outdir)
+    if args.offset_thresh == 0:
+        if not args.out:
+            outfname = 'papers-{}.json'.format(args.year)
+        else:
+            outfname = args.out
+        outfpath = os.path.join(outdir, outfname)
+        if os.path.exists(outfpath):
+            logger.error("file {} exists. exiting.".format(outfpath))
+            sys.exit(1)
+
+    outfile_index = 0
+    offset = 0
+    i = 0
+    delay = 120
+    while True:
+        i += 1
+        offset_thresh = args.offset_thresh * i
+        all_results, offset = make_repeated_queries(args.year, offset_start=offset, offset_thresh=offset_thresh)
+        if len(all_results) == 0:
+            break
+
+        if args.offset_thresh != 0:
+            outfile_index += 1
+            if not args.out:
+                outfname = 'papers-{}_{}.json'.format(args.year, outfile_index)
+            else:
+                outfname = "{}.{}".format(args.out, outfile_index)
+            outfpath = os.path.join(outdir, outfname)
+        logger.debug('writing {} records to {}'.format(len(all_results), outfpath))
+        with open(outfpath, 'w') as outf:
+            json.dump(all_results, outf, cls=classes.AcademicEncoder, indent=4)
+
+        if args.offset_thresh == 0:
+            break
+
+        logger.debug('sleeping {} seconds'.format(delay))
+        time.sleep(delay)
 
     #
-    logger.debug('writing {} records to {}'.format(len(all_results), outfpath))
-    with open(outfpath, 'w') as outf:
-        json.dump(all_results, outf, cls=classes.AcademicEncoder, indent=4)
     #
 
 
@@ -168,6 +213,7 @@ if __name__ == "__main__":
     parser.add_argument("year", type=int, default=1999, help="year to query")
     parser.add_argument("-o", "--out", help="output filename (json)")
     parser.add_argument("--outdir", default="paperscrape/", help="directory for the output")
+    parser.add_argument("--offset-thresh", type=int, default=0, help="every time the offset hits a multiple of this threshold, save the results to json. (zero means don't use threshold)")
     # parser.add_argument("--attributes", default='Id,Y,D', help="comma separated list of attributes to return")  # return these attributes: paper ID, Year, Date
     parser.add_argument("--debug", action='store_true', help="output debugging info")
     global args
