@@ -1,4 +1,4 @@
-import sys, os, time
+import sys, os, time, json
 from datetime import datetime
 from timeit import default_timer as timer
 try:
@@ -7,6 +7,7 @@ except ImportError:
     def format_timespan(seconds):
         return "{:.2f} seconds".format(seconds)
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 import logging
 logging.basicConfig(format='%(asctime)s %(name)s.%(lineno)d %(levelname)s : %(message)s',
@@ -49,6 +50,7 @@ def process_paper(record):
     extended = record.get('E')
     if extended:
         p.DOI = extended.get('DOI')
+    p.language = record.get('L')
         
     prs = []
     references = record.get('RId')
@@ -86,21 +88,27 @@ def add_record(record, session):
 def main(args):
     fname = os.path.abspath(args.input)
     logger.debug("loading input file: {}".format(fname))
-    sys.exit(0)
     start = timer()
     with open(fname, 'r') as f:
         records = json.load(f)
     logger.debug("done loading {} records. took {}".format(len(records), format_timespan(timer()-start)))
 
     session = Session(db.engine)
+    num_added = 0
     for i, record in enumerate(records):
         try:
-            logger.debug("adding record {} (Id: {}))".format(i, record.get('Id'))
+            if i in [0,1,5,10,100,500,1000,5000] or i % 10000 == 0:
+                logger.debug("adding record {} (Id: {}))".format(i, record.get('Id')))
             add_record(record, session)
             session.commit()
-        except:
+            num_added += 1
+        except IntegrityError:
+            logger.warn("record {} (Id: {}) encountered an IntegrityError (means it's already in the database). Skipping".format(i, record.get('Id')))
+            session.rollback()
+        except:  # any other exception
             session.rollback()
             raise
+    logger.info("done adding papers. {} added total (out of {} records)".format(num_added, len(records)))
 
 if __name__ == "__main__":
     total_start = timer()

@@ -6,7 +6,7 @@ database_settings = {
     'host_name': '127.0.0.1',
     'user_name': os.environ.get('MYSQL_USERNAME'),
     'password': os.environ.get('MYSQL_PASSWORD'),
-    #'encoding': 'utf8',
+    'encoding': 'utf8',
     'module_path': None,
     'db_name': 'mag_2017-10'
 }
