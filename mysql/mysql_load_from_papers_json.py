@@ -17,6 +17,8 @@ logging.basicConfig(format='%(asctime)s %(name)s.%(lineno)d %(levelname)s : %(me
 logger = logging.getLogger('__main__').getChild(__name__)
 
 DOTENV_PATH = '../.env'
+# keep track of loading these records in a database table
+LOG_TABLENAME = 'paperjson_loaded'
 
 from dotenv import load_dotenv
 load_dotenv(DOTENV_PATH)
@@ -87,6 +89,7 @@ def add_record(record, session):
 
 def main(args):
     fname = os.path.abspath(args.input)
+    fname_base = os.path.basename(fname)
     logger.debug("loading input file: {}".format(fname))
     start = timer()
     with open(fname, 'r') as f:
@@ -94,6 +97,29 @@ def main(args):
     logger.debug("done loading {} records. took {}".format(len(records), format_timespan(timer()-start)))
 
     session = Session(db.engine)
+
+    # keep track of loading these records in a database table
+    if Base.classes.has_key(LOG_TABLENAME):
+        DBLog = Base.classes[LOG_TABLENAME]
+        # check if this input file already exists in the log table
+        exists = session.query(DBLog).filter(DBLog.json_fname==fname_base).scalar()
+        if exists is not None:
+            # if the query returned something, the input file is already in the log table, and we have done this one already
+            logger.error("this input file --- {} --- already exists in the database table {}, which means this data has already been loaded. Exiting...".format(fname_base, LOG_TABLENAME))
+            sys.exit(1)
+
+        # begin logging the details of this loading session to database table
+        db_log = DBLog()
+        db_log.json_fname = fname_base
+        db_log.load_start = datetime.now()
+        db_log.num_records = len(records)
+        logger.debug("logging the details of this loading session to database table {}".format(LOG_TABLENAME))
+        
+    else:
+        db_log = None
+        logger.debug("database table {} not found. not logging the details of this loading session to a database table".format(LOG_TABLENAME))
+        
+
     num_added = 0
     for i, record in enumerate(records):
         try:
@@ -109,6 +135,18 @@ def main(args):
             session.rollback()
             raise
     logger.info("done adding papers. {} added total (out of {} records)".format(num_added, len(records)))
+
+    if db_log:
+        db_log.load_end = datetime.now()
+        db_log.num_added = num_added
+        try:
+            logger.debug("adding the details of this loading session to database table {}".format(LOG_TABLENAME))
+            session.add(db_log)
+            session.commit()
+        except:
+            session.rollback()
+            logger.warn("Something went wrong when logging the details of this loading session to database table {}. Skipping this.".format(LOG_TABLENAME))
+        
 
 if __name__ == "__main__":
     total_start = timer()
