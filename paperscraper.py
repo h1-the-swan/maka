@@ -133,7 +133,7 @@ def make_repeated_queries(year, offset_start=0, offset_thresh=0):
         attempts = 0
         # NOTE: when the offset gets too high (somewhere between 2e6 and 3e6) we will start getting a lot of timeout errors (these are returned as 200 but the entities are empty and it has an 'aborted' attribute
         # it looks like we'll have to give up on this method when this starts happening.
-        max_attempts = 5
+        max_attempts = 4
         while attempts < max_attempts:
             try:
                 j = generic_evaluate_query_from_querier(querier)
@@ -145,7 +145,7 @@ def make_repeated_queries(year, offset_start=0, offset_thresh=0):
                 if attempts >= max_attempts:
                     logger.error('max attempts exceeded with query_offset=={}. giving up: writing what we have to json and exiting...'.format(querier.query.offset))
                     return all_results, querier.query.offset
-                delay = min(60 * (attempts + 1), 200)
+                delay = min(60 * (attempts + 1), 300)
                 querier.query.count = 50
                 logger.warn("bad request: {}. sleeping {} seconds and trying again with query count {} (attempt {})".format(e, delay, querier.query.count, attempts))
                 time.sleep(delay)
@@ -181,7 +181,7 @@ def main(args):
     outfile_index = 0
     offset = 0
     i = 0
-    delay = 120
+    delay = 15
     while True:
         i += 1
         offset_thresh = args.offset_thresh * i
