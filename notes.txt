@@ -1,0 +1,25 @@
+2017-11-18
+
+USE `mag_2017-10`;
+
+SELECT A.Paper_reference_ID, B.Paper_ID
+    FROM PaperReferences AS A
+    LEFT JOIN Papers AS B ON A.Paper_reference_ID=B.Paper_ID
+    WHERE B.Paper_ID IS NULL;
+
+output this to a tsv file
+this took ~4 hours with ~1B PaperReferences and ~103M Papers
+
+
+2017-11-19
+
+before added missing from references:
+Papers count: 102984539
+PaperReferences count: 1007091804
+PaperAuthorAffiliations count: 307132584
+
+
+2017-12-17
+https://stackoverflow.com/a/20854048
+This describes how I'm using to use mysql_config_editor to supply credentials to mysql on the command line.
+I'm using the --login-path "client". MySQL defaults to look for "client".

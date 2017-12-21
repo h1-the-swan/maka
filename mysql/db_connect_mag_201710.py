@@ -15,3 +15,9 @@ def get_db_connection():
     c = MySQLConnect(**database_settings)
     return c
 
+def prepare_base(db):
+    # http://docs.sqlalchemy.org/en/latest/orm/extensions/automap.html
+    from sqlalchemy.ext.automap import automap_base
+    Base = automap_base()
+    Base.prepare(db.engine, reflect=True)
+    return Base

@@ -62,13 +62,13 @@ class MySQLConnect(object):
             con = con + "&charset=" + self.encoding
         return con
 
-    def get_engine(self):
+    def get_engine(self, pool_recycle=25200):
         """Get sqlalchemy engine
         :returns: sqlalchemy engine object
 
         """
         if not self.engine:
-            self.engine = create_engine(self.get_connection_string())
+            self.engine = create_engine(self.get_connection_string(), pool_recycle=pool_recycle)
             self.metadata = MetaData(self.engine)
             self.metadata.reflect()
         self.tables = self.get_all_tables()

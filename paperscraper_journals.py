@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 dotenv_path = os.path.abspath('./.env')
 load_dotenv(dotenv_path)
 
+from paperscraper import generic_evaluate_query_from_querier, get_querier, check_type, process_entities
+
 import logging
 logging.basicConfig(format='%(asctime)s %(name)s.%(lineno)d %(levelname)s : %(message)s',
         datefmt="%H:%M:%S",
@@ -34,77 +36,37 @@ logger = logging.getLogger('__main__').getChild(__name__)
 #     results = q.post()
 #     return new_args, results
 
-def process_entities(entities):
-    processed = []
-    for e in entities:
-        # JSON encode extended metadata
-        e['E'] = json.loads(e['E'])
-
-        p = {
-            'Id': e['Id'],
-            'Ti': e['Ti'],
-            'L': e.get('L'),
-            'Y': e['Y'],
-            'D': e.get('D'),
-            'RId': e.get('RId'),
-            'AA': [],
-            'F': [],
-            'J': e.get('J'),
-            'C': e.get('C'),
-            'E': {'DOI': e['E'].get('DOI')}
-        }
-        authors = e.get('AA', [])
-        for a in authors:
-            p['AA'].append({
-                    'AuId': a['AuId'],
-                    'AuN': a.get('AuN'),
-                    'AfId': a.get('AfId')
-            })
-        fields = e.get('F', [])
-        for f in fields:
-            p['F'].append({'FId': f['FId']})
-        processed.append(p)
-    return processed
-
-def get_querier(expr):
-    q_args = {
-        'query_type': querytype.EVALUATE,
-        'payload': {
-            'expr': expr,
-            'attributes': '*'
-        },
-        'parent': None
-    }
-    q = inquirer.AcademicQuerier(q_args['query_type'], q_args['payload'])
-    return q
-
-def generic_evaluate_query_from_querier(querier, return_json=True):
-    url = querier.query.get_url()
-    headers = {'Ocp-Apim-Subscription-Key': os.environ['MAKA_SUBSCRIPTION_KEY']}
-    data = querier.query.get_body()
-    request = requests.post(url, data=data, headers=headers)
-    if request.status_code >= 300:
-        raise classes.Error('An error ocurred while processing the request. Code: {}'.format(request.status_code))
-    j = request.json()
-    if j.get('aborted'):
-        raise classes.Error('Request timeout')
-    if return_json:
-        return j
-    else:
-        return request
-
-def generic_evaluate_query(expr):
-    querier = get_querier(expr)
-    return generic_evaluate_query_from_querier(querier)
-
-def generic_id_query(id):
-    expr = "Id={}".format(id)
-    return generic_evaluate_query(expr)
-
-def check_type(entities):
-    for entity in entities:
-        if entity.get('Ty') not in ['0', 0]:
-            logger.warn("entity Id={} is not paper (Ty 0)".format(entity.get('Id')))
+# def process_entities(entities):
+#     processed = []
+#     for e in entities:
+#         # JSON encode extended metadata
+#         e['E'] = json.loads(e['E'])
+#
+#         p = {
+#             'Id': e['Id'],
+#             'Ti': e['Ti'],
+#             'L': e.get('L'),
+#             'Y': e['Y'],
+#             'D': e.get('D'),
+#             'RId': e.get('RId'),
+#             'AA': [],
+#             'F': [],
+#             'J': e.get('J'),
+#             'C': e.get('C'),
+#             'E': {'DOI': e['E'].get('DOI')}
+#         }
+#         authors = e.get('AA', [])
+#         for a in authors:
+#             p['AA'].append({
+#                     'AuId': a['AuId'],
+#                     'AuN': a.get('AuN'),
+#                     'AfId': a.get('AfId')
+#             })
+#         fields = e.get('F', [])
+#         for f in fields:
+#             p['F'].append({'FId': f['FId']})
+#         processed.append(p)
+#     return processed
 
 def query_with_error_handling(querier, max_attempts=4):
     attempts = 0
@@ -129,20 +91,10 @@ def query_with_error_handling(querier, max_attempts=4):
             continue
     return j, success
 
-def make_short_query(expr):
-    querier = get_querier(expr)
-    # j = generic_evaluate_query_from_querier(querier)
-    j, success = query_with_error_handling(querier)
-    if not success:
-        return None
-    entities = j['entities']
-    check_type(entities)
-    processed = process_entities(entities)
-    return processed
-
-def make_repeated_queries(expr, offset_start=0, offset_thresh=0):
+def make_repeated_queries_by_journal(jid, id_str='J.JId', offset_start=0, offset_thresh=0):
     all_results = []
-    querier = get_querier(expr)
+    # num_results = 0
+    querier = get_querier("Composite({}={})".format(id_str, jid))
     querier.query.offset = offset_start
     logger.debug('making first query with args: {}'.format(querier.query.get_body()))
     # j = generic_evaluate_query_from_querier(querier)
@@ -187,15 +139,11 @@ def make_repeated_queries(expr, offset_start=0, offset_thresh=0):
             break
     return all_results, querier.query.offset
 
-def make_repeated_queries_by_year(year, offset_start=0, offset_thresh=0):
-    expr = "Y={}".format(year)
-    return make_repeated_queries(expr, offset_start, offset_thresh)
-
 def main(args):
     outdir = os.path.abspath(args.outdir)
     if args.offset_thresh == 0:
         if not args.out:
-            outfname = 'papers-{}.json'.format(args.year)
+            outfname = 'papers_byjournal-{}.json'.format(args.jid)
         else:
             outfname = args.out
         outfpath = os.path.join(outdir, outfname)
@@ -210,14 +158,14 @@ def main(args):
     while True:
         i += 1
         offset_thresh = args.offset_thresh * i
-        all_results, offset = make_repeated_queries_by_year(args.year, offset_start=offset, offset_thresh=offset_thresh)
+        all_results, offset = make_repeated_queries_by_journal(args.jid, offset_start=offset, offset_thresh=offset_thresh)
         if len(all_results) == 0:
             break
 
         if args.offset_thresh != 0:
             outfile_index += 1
             if not args.out:
-                outfname = 'papers-{}_{}.json'.format(args.year, outfile_index)
+                outfname = 'papers-{}_{}.json'.format(args.jid, outfile_index)
             else:
                 outfname = "{}.{}".format(args.out, outfile_index)
             outfpath = os.path.join(outdir, outfname)
@@ -245,10 +193,10 @@ if __name__ == "__main__":
     logger.info(" ".join(sys.argv))
     logger.info( '{:%Y-%m-%d %H:%M:%S}'.format(datetime.now()) )
     import argparse
-    parser = argparse.ArgumentParser(description="get all papers in a year")
-    parser.add_argument("year", type=int, default=1999, help="year to query")
+    parser = argparse.ArgumentParser(description="get all papers for a journal")
+    parser.add_argument("jid", type=int, help="Journal_ID to query")
     parser.add_argument("-o", "--out", help="output filename (json)")
-    parser.add_argument("--outdir", default="paperscrape/", help="directory for the output")
+    parser.add_argument("--outdir", default="paperscrape_journals/", help="directory for the output")
     parser.add_argument("--offset-thresh", type=int, default=0, help="every time the offset hits a multiple of this threshold, save the results to json. (zero means don't use threshold)")
     # parser.add_argument("--attributes", default='Id,Y,D', help="comma separated list of attributes to return")  # return these attributes: paper ID, Year, Date
     parser.add_argument("--debug", action='store_true', help="output debugging info")
@@ -262,4 +210,5 @@ if __name__ == "__main__":
     main(args)
     total_end = timer()
     logger.info('all finished. total time: {}'.format(format_timespan(total_end-total_start)))
+
 

@@ -104,5 +104,16 @@ ENV/
 # generated outputs
 *.json
 
+nohup.out
 paperscrape/
 *backup*tar*
+
+*Conference_series_IDs*.tsv
+*Journal_IDs*.tsv
+*dump.sql
+
+missing_Paper*
+
+dump/
+backup/
+*.csv
